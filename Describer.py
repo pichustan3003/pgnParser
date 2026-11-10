@@ -298,19 +298,3 @@ def readInputMoveAndReturnDescription(move : str):
     elif move[-1] == "#": out += " with checkmate"
 
     return out
-
-def testAgainstPGN(PGN : str):
-
-    with open(PGN, "r") as f:
-        file = f.read()
-    file = file[file.rfind("]")+1:].strip()
-    cmoves = [i[:i.rfind(" ")].strip() for i in file.split(".")]
-    moves : list[str] = []
-    for i in cmoves:
-        for j in i.replace("\n", " ").split(" "): 
-            moves.append(j)
-    moves.pop(0)
-    for i in moves:
-        print(readInputMoveAndReturnDescription(i))
-
-testAgainstPGN('MagnusCarlsenVsYaroslavShevchenko.pgn')
