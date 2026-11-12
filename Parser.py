@@ -1,4 +1,5 @@
 import re
+from Legality import generalLegailty, MoveError
 
 class game:
     def __init__(self, infoDict : dict[str,str], moves : list[str]) -> None:
@@ -12,6 +13,48 @@ class game:
             self.result = -1
         self.date = infoDict["Date"]
         self.moves = moves
+        self.boardPositionWhite = {
+            "P":"a2",
+            "P":"b2",
+            "P":"c2",
+            "P":"d2",
+            "P":"e2",
+            "P":"f2",
+            "P":"g2",
+            "P":"h2",
+            "R":"a1",
+            "R":"h1",
+            "N":"b1",
+            "N":"g1",
+            "B":"c1",
+            "B":"f1",
+            "K":"e1",
+            "Q":"d1"
+        }
+        self.boardPositionBlack = {
+            "P":"a7",
+            "P":"b7",
+            "P":"c7",
+            "P":"d7",
+            "P":"e7",
+            "P":"f7",
+            "P":"g7",
+            "P":"h7",
+            "R":"a8",
+            "R":"h8",
+            "N":"b8",
+            "N":"g8",
+            "B":"c8",
+            "B":"f8",
+            "K":"e8",
+            "Q":"d8"
+        }
+        self.checkForStrangeness()
+
+    def checkForStrangeness(self):
+        for i in self.moves:
+            if not generalLegailty(i):
+                raise MoveError(f"Error with move {i}")
 
     def __str__(self):
         if self.result == 1:
