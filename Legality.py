@@ -1,4 +1,5 @@
 import string
+from Parser import piece 
 pieceSymbols = {"R":"Rook", "N":"Knight", "B":"Bishop", "K":"King", "Q":"Queen"}
 
 class MoveError(Exception):
@@ -19,28 +20,72 @@ def deserialise(move : str):
     final = ""
     genMovCode = ""
     if move[0] in string.ascii_lowercase:
-        piece = "P"
-        if len(move):
+        if len(move) == 2:
             final = move
             genMovCode = "p"
-    return capture, start, final, genMovCode
+        if move[1] == "x":
+            final = move[2:4]
+            genMovCode = "px"
+    return start, final, genMovCode
 
-def squareFree(square : str, pieces : dict[str,str]):
-    return square not in pieces.values()
+def squareFree(square : str, pieces : list[str]):
+    return square not in pieces
 
-def checkLegalityWithBoardPosition(move: str, ownSidePieces : dict[str, str], opposingPieces : dict[str,  str], side : int):
-    capture, start, final, genMovCode = deserialise(move)
-    piecePos = ownSidePieces | opposingPieces
+def checkLegalityWithBoardPosition(move: str, board : list[piece], side : int):
+    start, final, genMovCode = deserialise(move)
+    global usedSquares
+    usedSquares = [p.file + str(p.rank) for p in board]
     match genMovCode:
         case "p":
-            if not squareFree(final, piecePos):
+            if not squareFree(final, usedSquares):
                 raise MoveError("move cannot be made (Square is not free for pawn to move to)")
-            # add actual move processing
 
-    
-            
+            for piece in board:
+                if piece.piece == "P" and piece.color == side:
+                    if (piece.rank + 1 * side == int(final[-1]) or (piece.rank + 2 * side == int(final[-1]) and piece.moved == 0)) and piece.file == final[0]:
+                        piece.file, piece.rank = final[0], int(final[1])
+                        break
+            else:
+                raise MoveError("No pawn can make this move")
 
-def kingLegalityChecker(move : str, takeAChillPill : bool = False):
+        case "px":
+            foe = False
+            attacker = False
+            for p in board:
+                if f"{p.file}{p.rank}" == final and p.color == side * -1:
+                    
+                    board.pop(board.index(p))
+                    foe = True
+                elif abs(ord(p.file) - ord(final[0])) == 1 and int(final[1])-p.rank == side:
+                    p.file = final[0]
+                    p.rank = int(final[1])
+                    attacker = True
+
+                if foe and attacker:
+                    break
+            else:
+                if not foe: raise MoveError("No piece on square required" if attacker else "No piece on square required and no pawn can make this move")
+                if not attacker: raise MoveError("No piece on square required and no pawn can make this move")
+                
+
+
+    return board
+
+def returnAllSquaresPieceCanHit(piece : piece, board : list[piece]):
+    usedSquares = [p.file + str(p.rank) for p in board]
+    side = piece.color
+    match piece.piece:
+        case "P":
+            attacks : list[str] = [f"{chr(ord(piece.file)+1)}{piece.rank+1*side}", f"{chr(ord(piece.file)-1)}{piece.rank+1*side}"]
+            for a in attacks:
+                if not squareFree(a, usedSquares):
+                    for p in board:
+                        if p.file + str(p.rank) == a and p.color == piece.color:
+                            attacks.pop(attacks.index(a))
+        case _: raise ValueError("Invalid piece name? Somehow?")
+    return attacks
+
+def kingLegalityChecker(move : str):
 
     destFile = move[0]
     destRow = int(move[1])
