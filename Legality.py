@@ -15,7 +15,6 @@ def generalLegailty(move : str):
     return True
 
 def deserialise(move : str):
-    capture = False
     start = ""
     final = ""
     genMovCode = ""
@@ -23,9 +22,15 @@ def deserialise(move : str):
         if len(move) == 2:
             final = move
             genMovCode = "p"
-        if move[1] == "x":
-            final = move[2:4]
+        if move[1] == "x" and len(move) == 4:
+            final = move
             genMovCode = "px"
+        if len(move) == 3 and move[-1] == "+":
+            final = move[0:2]
+            genMovCode = "p+"
+        if len(move) == 5 and move[-1] == "+":
+            final = move[:-1]
+            genMovCode = "px+"
     return start, final, genMovCode
 
 def squareFree(square : str, pieces : list[str]):
@@ -37,39 +42,82 @@ def checkLegalityWithBoardPosition(move: str, board : list[piece], side : int):
     usedSquares = [p.file + str(p.rank) for p in board]
     match genMovCode:
         case "p":
-            if not squareFree(final, usedSquares):
-                raise MoveError("move cannot be made (Square is not free for pawn to move to)")
-
-            for piece in board:
-                if piece.piece == "P" and piece.color == side:
-                    if (piece.rank + 1 * side == int(final[-1]) or (piece.rank + 2 * side == int(final[-1]) and piece.moved == 0)) and piece.file == final[0]:
-                        piece.file, piece.rank = final[0], int(final[1])
-                        break
-            else:
-                raise MoveError("No pawn can make this move")
-
+            board, _ = p(board, final, side)
         case "px":
-            foe = False
-            attacker = False
-            for p in board:
-                if f"{p.file}{p.rank}" == final and p.color == side * -1:
-                    
-                    board.pop(board.index(p))
-                    foe = True
-                elif abs(ord(p.file) - ord(final[0])) == 1 and int(final[1])-p.rank == side:
-                    p.file = final[0]
-                    p.rank = int(final[1])
-                    attacker = True
-
-                if foe and attacker:
-                    break
-            else:
-                if not foe: raise MoveError("No piece on square required" if attacker else "No piece on square required and no pawn can make this move")
-                if not attacker: raise MoveError("No piece on square required and no pawn can make this move")
-                
-
-
+            board, _ = px(board, final, side)
+        case "p+":
+            board, _ = pc(board, final, side)
+        case "px+":
+            board, _ = pxc(board, final, side)
+        case _: pass
     return board
+
+def p(board : list[piece], final : str, side : int):
+    if not squareFree(final, usedSquares):
+        raise MoveError("move cannot be made (Square is not free for pawn to move to)")
+    usedPiece = None
+    for piece in board:
+        if piece.piece == "P" and piece.color == side:
+            if (piece.rank + 1 * side == int(final[-1]) or (piece.rank + 2 * side == int(final[-1]) and piece.moved == 0)) and piece.file == final[0]:
+                usedPiece = piece
+                piece.file, piece.rank = final[0], int(final[1])
+                break
+    else:
+        raise MoveError("No pawn can make this move")
+    return board, usedPiece
+
+def px(board : list[piece], final : str, side : int):
+    pawn = piece("", 0, "", 0)
+    foe = False
+    attacker = False
+    moveTo = final[2:4]
+    for p in board:
+        if f"{p.file}{p.rank}" == moveTo and p.color == side * -1:
+            
+            board.pop(board.index(p))
+            foe = True
+        elif abs(ord(p.file) - ord(moveTo[0])) == 1 and int(moveTo[1])-p.rank == side and p.file == final[0]:
+            p.file = moveTo[0]
+            p.rank = int(moveTo[1])
+            pawn = p
+            attacker = True
+
+        if foe and attacker:
+            break
+    else:
+        if not foe: raise MoveError("No piece on square required" if attacker else "No piece on square required and no pawn can make this move")
+        if not attacker: raise MoveError("No piece on square required and no pawn can make this move")
+    return board, pawn
+
+def pc(board : list[piece], final : str, side : int):
+    file, rank = "", 0
+    for pc in board:
+        if pc.piece == "K" and pc.color != side:
+            file = pc.file
+            rank = pc.rank
+            break
+    else:
+        raise MoveError("This cannot be check as no king could be found")
+
+    board, pawn = p(board, final, side)
+    if file+str(rank) in returnAllSquaresPieceCanHit(pawn, board):
+        return board, pawn
+    raise MoveError("This is not check")
+
+def pxc(board : list[piece], final : str, side : int):
+    file, rank = "", 0
+    for pc in board:
+        if pc.piece == "K" and pc.color != side:
+            file = pc.file
+            rank = pc.rank
+            break
+    else:
+        raise MoveError("This cannot be check as no king could be found")
+
+    board, pawn = px(board, final, side)
+    if file+str(rank) in returnAllSquaresPieceCanHit(pawn, board):
+        return board, pawn
+    raise MoveError("This is not check")
 
 def returnAllSquaresPieceCanHit(piece : piece, board : list[piece]):
     usedSquares = [p.file + str(p.rank) for p in board]

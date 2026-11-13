@@ -91,7 +91,7 @@ class game:
     def makeMove(self, move : str, side : int):
         self.boardPosition = checkLegalityWithBoardPosition(move, self.boardPosition, side)
 
-    def readFEN(self, fen : str) -> game: # type: ignore
+    def readFEN(self, fen : str): # type: ignore
         """This is just for testing purposes. It is bad"""
         boardPosition : list[piece] = []
         goodBit = fen.split(" ")[0]
@@ -131,9 +131,8 @@ def readFile(fpath : str):
     return game(outInfo, mv)
 if __name__ == "__main__":
     from Legality import generalLegailty, MoveError, checkLegalityWithBoardPosition
-    import Legality
     g = readFile("MagnusCarlsenVsYaroslavShevchenko.pgn")
     print(g)
 
-    gameFromFEN = g.readFEN(r"rnbqkbnr/pp1ppPpp/3P4/8/8/2p5/PPPP1PPP/RNBQKBNR w KQkq - 0 1")
-    print(Legality.returnAllSquaresPieceCanHit(gameFromFEN.boardPosition[15], gameFromFEN.boardPosition))
+    gameFromFEN = g.readFEN(r"4k3/3p4/2P5/8/8/2K5/8/8 w - - 0 1") #type: ignore
+    print(gameFromFEN.makeMove("cxd7+", 1)) #type: ignore
