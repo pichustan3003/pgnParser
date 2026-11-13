@@ -1,5 +1,5 @@
 import string
-from Parser import piece 
+from Parser import piece, game
 pieceSymbols = {"R":"Rook", "N":"Knight", "B":"Bishop", "K":"King", "Q":"Queen"}
 
 class MoveError(Exception):
@@ -22,35 +22,64 @@ def deserialise(move : str):
         if len(move) == 2:
             final = move
             genMovCode = "p"
-        if move[1] == "x" and len(move) == 4:
-            final = move
+        elif move[1] == "x" and len(move) == 4:
+            start = move[0]
+            final = move[2:4]
             genMovCode = "px"
-        if len(move) == 3 and move[-1] == "+":
+        elif len(move) == 3 and move[-1] == "+":
             final = move[0:2]
             genMovCode = "p+"
-        if len(move) == 5 and move[-1] == "+":
+        elif len(move) == 5 and move[-1] == "+":
+            start = move[0]
             final = move[:-1]
             genMovCode = "px+"
+        elif len(move) == 3 and move[-1] == "#":
+            final = move[0:2]
+            genMovCode = "p#"
+        elif len(move) == 5 and move[-1] == "#":
+            start = move[0]
+            final = move[:-1]
+            genMovCode = "px#"
+    if (move[0] == "K"):
+        if len(move) == 3:
+            final = move[1:3]
+            genMovCode = "k"
+        elif move[1] == "x" and len(move) == 4:
+            final = move[2:4]
+            genMovCode = "kx"
     return start, final, genMovCode
 
 def squareFree(square : str, pieces : list[str]):
     return square not in pieces
 
-def checkLegalityWithBoardPosition(move: str, board : list[piece], side : int):
+def checkLegalityWithBoardPosition(move: str, board : list[piece], side : int, parent : game):
     start, final, genMovCode = deserialise(move)
     global usedSquares
+    global overallParent
+    overallParent = parent
     usedSquares = [p.file + str(p.rank) for p in board]
     match genMovCode:
         case "p":
-            board, _ = p(board, final, side)
+            board, out, oldF, oldR = p(board, final, side)
         case "px":
-            board, _ = px(board, final, side)
+            board, out, oldF, oldR = px(board, start, final, side)
         case "p+":
-            board, _ = pc(board, final, side)
+            board, out, oldF, oldR = pc(board, final, side)
         case "px+":
-            board, _ = pxc(board, final, side)
-        case _: pass
-    return board
+            board, out, oldF, oldR = pxc(board, start, final, side)
+        case "p#":
+            board, out, oldF, oldR = pm(board, final, side)
+        case "px#":
+            board, out, oldF, oldR = pxm(board, start, final, side)
+        case "k":
+            board, out, oldF, oldR = k(board, final, side)
+        case "kx":
+            board, out, oldF, oldR = kx(board, final, side)
+        case _: raise MoveError("Cannot read move")
+    if isCheck(board, side):
+        raise MoveError("This would put your king in check")
+    out.moved = True
+    return board, out, oldF, oldR
 
 def p(board : list[piece], final : str, side : int):
     if not squareFree(final, usedSquares):
@@ -60,77 +89,253 @@ def p(board : list[piece], final : str, side : int):
         if piece.piece == "P" and piece.color == side:
             if (piece.rank + 1 * side == int(final[-1]) or (piece.rank + 2 * side == int(final[-1]) and piece.moved == 0)) and piece.file == final[0]:
                 usedPiece = piece
+                oldF, oldR = piece.file, piece.rank
                 piece.file, piece.rank = final[0], int(final[1])
                 break
     else:
         raise MoveError("No pawn can make this move")
-    return board, usedPiece
+    return board, usedPiece, oldF, oldR
 
-def px(board : list[piece], final : str, side : int):
-    pawn = piece("", 0, "", 0)
-    foe = False
-    attacker = False
-    moveTo = final[2:4]
-    for p in board:
-        if f"{p.file}{p.rank}" == moveTo and p.color == side * -1:
-            
-            board.pop(board.index(p))
-            foe = True
-        elif abs(ord(p.file) - ord(moveTo[0])) == 1 and int(moveTo[1])-p.rank == side and p.file == final[0]:
-            p.file = moveTo[0]
-            p.rank = int(moveTo[1])
-            pawn = p
-            attacker = True
+def px(board: list[piece], start: str, final: str, side: int):
 
-        if foe and attacker:
-            break
-    else:
-        if not foe: raise MoveError("No piece on square required" if attacker else "No piece on square required and no pawn can make this move")
-        if not attacker: raise MoveError("No piece on square required and no pawn can make this move")
-    return board, pawn
+    # Find the moving pawn
+    pawn = next(
+        (p for p in board
+         if f"{p.file}" == start and p.color == side and p.piece == "P"),
+        None
+    )
+
+    if pawn is None:
+        raise MoveError("No pawn on starting square")
+
+    oldF, oldR = pawn.file, pawn.rank
+
+    # Check that the pawn is moving diagonally forwards
+    if abs(ord(final[0]) - ord(start[0])) != 1 or int(final[1]) - pawn.rank != side:
+        raise MoveError("Invalid pawn capture")
+
+    # Check for a normal capture
+    victim = next(
+        (p for p in board
+         if f"{p.file}{p.rank}" == final and p.color == -side),
+        None
+    )
+
+    # If there isn't a normal capture, check en passant
+    if victim is None:
+
+        q = overallParent.query("MOVE -1")
+
+        # Square containing the pawn that could be captured
+        enPasSquare = f"{final[0]}{pawn.rank}"
+
+        if (
+            q.piece.piece == "P"
+            and q.origin[0] == q.destination[0]
+            and abs(int(q.origin[1]) - int(q.destination[1])) == 2
+            and q.destination == enPasSquare
+        ):
+            victim = next(
+                (p for p in board
+                    if f"{p.file}{p.rank}" == enPasSquare
+                    and p.color == -side
+                    and p.piece == "P"),
+                None
+            )
+
+        if victim is None:
+            raise MoveError("No piece on square required")
+
+    # Remove captured piece
+    board.remove(victim)
+
+    # Move the pawn
+    pawn.file = final[0]
+    pawn.rank = int(final[1])
+
+    return board, pawn, oldF, oldR
 
 def pc(board : list[piece], final : str, side : int):
-    file, rank = "", 0
-    for pc in board:
-        if pc.piece == "K" and pc.color != side:
-            file = pc.file
-            rank = pc.rank
-            break
-    else:
-        raise MoveError("This cannot be check as no king could be found")
-
-    board, pawn = p(board, final, side)
-    if file+str(rank) in returnAllSquaresPieceCanHit(pawn, board):
-        return board, pawn
+    board, pawn, oldF, oldR = p(board, final, side)
+    if isCheck(board, side*-1):
+        return board, pawn, oldF, oldR
     raise MoveError("This is not check")
 
-def pxc(board : list[piece], final : str, side : int):
-    file, rank = "", 0
-    for pc in board:
-        if pc.piece == "K" and pc.color != side:
-            file = pc.file
-            rank = pc.rank
+def pxc(board : list[piece], start : str, final : str, side : int):
+    board, pawn, oldF, oldR = px(board, final, start, side)
+    if isCheck(board, side*-1):
+        return board, pawn, oldF, oldR
+    raise MoveError("This is not check")
+
+def pm(board : list[piece], final : str, side : int):
+    board, pawn, oldF, oldR = p(board, final, side)
+    if isMate(board, side*-1):
+        return board, pawn, oldF, oldR
+    raise MoveError("This is not mate")
+
+def pxm(board : list[piece], start : str, final : str, side : int):
+    board, pawn, oldF, oldR = px(board, final, start, side)
+    if isMate(board, side*-1):
+        return board, pawn, oldF, oldR
+    raise MoveError("This is not mate")
+
+def k(board : list[piece], final : str, side : int):
+    king = None
+    for p in board:
+        if p.piece == "K" and side == p.color:
+            king = p
             break
     else:
-        raise MoveError("This cannot be check as no king could be found")
+        raise MoveError("Cannot find king")
+    atk = kingAttacks(king, board)
+    oldF, oldR = king.file, king.rank
+    if final in atk:
+        king.file, king.rank = final[0], int(final[1])
+    else:
+        raise MoveError("Cannot make move")
+    return board, king, oldF, oldR
 
-    board, pawn = px(board, final, side)
-    if file+str(rank) in returnAllSquaresPieceCanHit(pawn, board):
-        return board, pawn
-    raise MoveError("This is not check")
+def kx(board : list[piece], final : str, side : int):
+    vict = findPieceOnSquare(final, board)
+    board, king, oldF, oldR = k(board, final, side)
+    if vict:
+        board.remove(vict)
+    return board, king, oldF, oldR
+
+def isCheck(board : list[piece], side : int):
+    """
+    Checks if king is currently in check based off the board position (SIDE REFERS TO THE SIDE THE KING IS ON NOT THE CHECK GIVER)
+    """
+    attacks : list[str]= []
+    king = None
+    for i in board:
+        if i.piece == "K" and i.color == side:
+            king = i
+        else:
+            if i.color == side:
+                continue
+            attacks += returnAllSquaresPieceCanHit(i, board)
+    if not king: raise ValueError("Cannot find king")
+    return king.file + str(king.rank) in attacks
+
+def isMate(board : list[piece], side : int):
+    """
+    Checks if king is currently in checkmate based off the board position (SIDE REFERS TO THE SIDE THE KING IS ON NOT THE CHECK GIVER)
+    """
+    attacks : list[str]= []
+    king = None
+    for i in board:
+        if i.piece == "K" and i.color == side:
+            king = i
+        else:
+            if i.color == side:
+                continue
+            attacks += returnAllSquaresPieceCanHit(i, board)
+    if not king: raise ValueError("Cannot find king")
+    kingSpots = returnAllSquaresPieceCanHit(king, board) + [king.file + str(king.rank)]
+    for s in kingSpots:
+        if s not in attacks:
+            return False
+    return True
+
+def findPieceOnSquare(square : str, board : list[piece]) -> (piece | None):
+    for p in board:
+        if p.file + str(p.rank) == square:
+            return p
+    else: return None
 
 def returnAllSquaresPieceCanHit(piece : piece, board : list[piece]):
-    usedSquares = [p.file + str(p.rank) for p in board]
-    side = piece.color
     match piece.piece:
         case "P":
-            attacks : list[str] = [f"{chr(ord(piece.file)+1)}{piece.rank+1*side}", f"{chr(ord(piece.file)-1)}{piece.rank+1*side}"]
-            for a in attacks:
-                if not squareFree(a, usedSquares):
-                    for p in board:
-                        if p.file + str(p.rank) == a and p.color == piece.color:
-                            attacks.pop(attacks.index(a))
+            attacks = pawnAttacks(piece, board)
+        case "K":
+            attacks = kingAttacks(piece, board)
+        case "N":
+            attacks = knightAttacks(piece, board)
+        case "B":
+            attacks = bishopAttacks(piece, board)
+        case "R":
+            attacks = rookAttacks(piece, board)
+        case "Q":
+            attacks = rookAttacks(piece, board) + bishopAttacks(piece, board)
         case _: raise ValueError("Invalid piece name? Somehow?")
+    attacksF : list[str] = []
+    for a in attacks:
+        if ord("a") <= ord(a[0]) <= ord("h") and 1 <= int(a[1:]) <= 8:
+            attacksF.append(a)
+    return attacksF
+
+def getOwnColorPieces(board : list[piece], side : int):
+    return [x.file + str(x.rank) for x in board if x.color == side]
+
+def pawnAttacks(piece : piece, board : list[piece]):
+    attacks : list[str] = [f"{chr(ord(piece.file)+1)}{piece.rank+1*piece.color}", f"{chr(ord(piece.file)-1)}{piece.rank+1*piece.color}"]
+    temp : list[str] = []
+    usedSquares = [p.file + str(p.rank) for p in board]
+    for a in attacks:
+        if not squareFree(a, usedSquares):
+            for p in board:
+                if not (p.file + str(p.rank) == a and p.color == piece.color):
+                    temp.append(a)
+    return temp
+
+def kingAttacks(piece : piece, board : list[piece]):
+    attacks : list[str] = []
+    ownColorPieces = getOwnColorPieces(board, piece.color)
+    for i in range(-1,2):
+        for j in range(-1,2):
+            attacks.append(chr(ord(piece.file)+i)+str(piece.rank+j))
+    tempAttacks : list[str] = []
+    for an in range(len(attacks)):
+        a = attacks[an]
+        if a not in ownColorPieces:
+            tempAttacks.append(a)
+    attacks = tempAttacks
+    return attacks
+
+def knightAttacks(piece : piece, board : list[piece]):
+    attacks = [f"{chr(ord(piece.file)+1)}{piece.rank+2}", f"{chr(ord(piece.file)+2)}{piece.rank+1}", f"{chr(ord(piece.file)+2)}{piece.rank-1}",f"{chr(ord(piece.file)+1)}{piece.rank-2}",f"{chr(ord(piece.file)-1)}{piece.rank-2}", f"{chr(ord(piece.file)-2)}{piece.rank-1}", f"{chr(ord(piece.file)-2)}{piece.rank+1}", f"{chr(ord(piece.file)-1)}{piece.rank+2}"]
+    tempAttacks : list[str] = []
+    ownColorPieces = getOwnColorPieces(board, piece.color)
+    for an in range(len(attacks)):
+        a = attacks[an]
+        if a not in ownColorPieces:
+            tempAttacks.append(a)
+    attacks = tempAttacks
+    return attacks
+
+def rookAttacks(piece : piece, board : list[piece]):
+    arrangements = [(1,0),(-1,0),(0,-1),(0,1)]
+    ownColorPieces = getOwnColorPieces(board, piece.color)
+    attacks : list[str] = []
+    for i in range(4):
+        hor = arrangements[i][0]
+        ver = arrangements[i][1]
+        rnk = piece.rank
+        fle = ord(piece.file)
+        while chr(fle+hor)+str(rnk+ver) not in ownColorPieces and (ord('a')<=fle+hor<=ord('h')) and (1<=rnk+ver<=8):
+            attacks.append(chr(fle+hor)+str(rnk+ver))
+            if findPieceOnSquare(chr(fle+hor)+str(rnk+ver), board):
+                break
+            rnk += ver
+            fle += hor
+    return attacks
+
+def bishopAttacks(piece : piece, board : list[piece]):
+    arrangements = [(1,1),(-1,1),(1,-1),(-1,-1)]
+    ownColorPieces = getOwnColorPieces(board, piece.color)
+    attacks : list[str] = []
+    for i in range(4):
+        hor = arrangements[i][0]
+        ver = arrangements[i][1]
+        rnk = piece.rank
+        fle = ord(piece.file)
+        while chr(fle+hor)+str(rnk+ver) not in ownColorPieces and (ord('a')<=fle+hor<=ord('h')) and (1<=rnk+ver<=8):
+            attacks.append(chr(fle+hor)+str(rnk+ver))
+            if findPieceOnSquare(chr(fle+hor)+str(rnk+ver), board):
+                break
+            rnk += ver
+            fle += hor
     return attacks
 
 def kingLegalityChecker(move : str):

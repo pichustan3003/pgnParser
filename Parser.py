@@ -11,6 +11,14 @@ class piece:
         self.color = color
     def __str__(self) -> str:
         return f"{"white" if self.color == 1 else "black"} {self.piece} on {self.file}{self.rank}"
+
+class mv:
+    def __init__(self, move : str, piece : piece, oldF : str, oldR : int):
+        self.move = move
+        self.piece = piece
+        self.origin = oldF + str(oldR)
+        self.destination = piece.file + str(piece.rank)
+
 class game:
 
     def initAsFEN(self, bPos : list[piece]) -> None:
@@ -20,6 +28,7 @@ class game:
         self.boardPosition = bPos
         self.date = "Unknown"
         self.result = "This game was dirived from FEN which means the result is not known"
+        self.reg : list[mv] = []
 
     def initAsInfo(self, infoDict : dict[str,str], moves : list[str]) -> None:
         """Actual constructor"""
@@ -33,6 +42,7 @@ class game:
             self.result = -1
         self.date = infoDict["Date"]
         self.moves = moves
+
         self.boardPosition : list[piece] = [
             # White pawns
             *[piece("P", 2, f, 1) for f in "abcdefgh"],
@@ -88,8 +98,16 @@ class game:
             out = "a draw"
         return f"Game between {self.white} and {self.black} which ended in {out}"
 
+    def query(self, q : str):
+        sects = q.split(" ")
+        if sects[0] == "MOVE":
+            return self.reg[int(sects[1])]
+        else:
+            raise ValueError("Unrecognised command")
+
     def makeMove(self, move : str, side : int):
-        self.boardPosition = checkLegalityWithBoardPosition(move, self.boardPosition, side)
+        self.boardPosition, out, oldF, oldR = checkLegalityWithBoardPosition(move, self.boardPosition, side, self) # type: ignore
+        self.reg.append(mv(move, out, oldF, oldR))
 
     def readFEN(self, fen : str): # type: ignore
         """This is just for testing purposes. It is bad"""
@@ -133,6 +151,9 @@ if __name__ == "__main__":
     from Legality import generalLegailty, MoveError, checkLegalityWithBoardPosition
     g = readFile("MagnusCarlsenVsYaroslavShevchenko.pgn")
     print(g)
-
-    gameFromFEN = g.readFEN(r"4k3/3p4/2P5/8/8/2K5/8/8 w - - 0 1") #type: ignore
-    print(gameFromFEN.makeMove("cxd7+", 1)) #type: ignore
+    import Legality
+    gameFromFEN = g.readFEN(r"8/4b3/4k3/3P4/8/5R2/8/K7 w - - 0 1") #type: ignore
+    #for i in range(len(gameFromFEN.boardPosition)):
+    #    print(i, gameFromFEN.boardPosition[i])
+    #print(Legality.isMate(gameFromFEN.boardPosition, -1))
+    gameFromFEN.makeMove("Ke7", -1)
