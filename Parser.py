@@ -11,6 +11,9 @@ class piece:
         self.color = color
     def __str__(self) -> str:
         return f"{"white" if self.color == 1 else "black"} {self.piece} on {self.file}{self.rank}"
+    def squareNotation(self):
+        return f"{self.file}{self.rank}"
+
 
 class mv:
     def __init__(self, move : str, piece : piece, oldF : str, oldR : int):
@@ -108,6 +111,10 @@ class game:
     def makeMove(self, move : str, side : int):
         self.boardPosition, out, oldF, oldR = checkLegalityWithBoardPosition(move, self.boardPosition, side, self) # type: ignore
         self.reg.append(mv(move, out, oldF, oldR))
+        if Legality.isDrawByMaterial(self.boardPosition): print("The game is drawn due to insufficent material")
+        elif Legality.isMate(self.boardPosition, 1): print("White is mated, black wins!")
+        elif Legality.isMate(self.boardPosition, -1): print("Black is mated, white wins!")
+        elif Legality.isStale(self.boardPosition, 1) or Legality.isStale(self.boardPosition, -1): print("The game is drawn by stalemate")
 
     def readFEN(self, fen : str): # type: ignore
         """This is just for testing purposes. It is bad"""
@@ -149,11 +156,8 @@ def readFile(fpath : str):
     return game(outInfo, mv)
 if __name__ == "__main__":
     from Legality import generalLegailty, MoveError, checkLegalityWithBoardPosition
+    import Legality
     g = readFile("MagnusCarlsenVsYaroslavShevchenko.pgn")
     print(g)
-    import Legality
-    gameFromFEN = g.readFEN(r"8/4b3/4k3/3P4/8/5R2/8/K7 w - - 0 1") #type: ignore
-    #for i in range(len(gameFromFEN.boardPosition)):
-    #    print(i, gameFromFEN.boardPosition[i])
-    #print(Legality.isMate(gameFromFEN.boardPosition, -1))
-    gameFromFEN.makeMove("Ke7", -1)
+    gameFromFEN = g.readFEN(r"7K/4q3/8/8/8/3k4/8/8 b - - 0 1") #type: ignore
+    gameFromFEN.makeMove("Qe8", -1)
